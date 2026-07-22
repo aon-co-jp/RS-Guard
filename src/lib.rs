@@ -1,4 +1,5 @@
 pub mod blocklist;
+pub mod ai_classify;
 pub mod clamav;
 pub mod repo_scan;
 pub mod signatures;

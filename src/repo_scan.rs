@@ -45,6 +45,11 @@ pub enum FindingKind {
     MalwareSignature,
     /// スパイウェア挙動(無断の情報収集・持ち出し・常駐/自動巡回)。
     SpywareBehavior,
+    /// 静的ルールには一致しなかったが、AI二次判定
+    /// ([`crate::ai_classify`]、aruaru-llmの埋め込み類似度)が疑わしいと
+    /// 判定したもの。訓練済み分類器ではなくヒューリスティックなので、
+    /// 静的検出より確信度は低い扱いにする。
+    AiSuspicion,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -172,6 +177,46 @@ fn scan_text(path: &Path, text: &str, findings: &mut Vec<Finding>) {
     }
 }
 
+/// スキャン対象とする拡張子。`scan_project`と、AI二次判定用の
+/// [`collect_scannable_files`]で同じ集合を使う。
+const SCANNABLE_EXTS: [&str; 22] =
+    ["sh", "ps1", "bat", "cmd", "js", "ts", "mjs", "cjs", "py", "rb", "rs", "go", "php", "pl", "vbs", "psm1", "txt", "conf", "cfg", "yml", "yaml", "json"];
+
+/// 走査から除外するディレクトリ(依存物・ビルド成果物)。
+const EXCLUDE_DIRS: [&str; 5] = ["node_modules", ".git", "target", "dist", "build"];
+
+/// 1ファイルあたりの読み込み上限。
+const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
+
+/// スキャン対象ファイルのパスと内容を集める(AI二次判定用)。
+/// `scan_project`と同じ拡張子・除外ディレクトリ・サイズ上限のルールに従う
+/// ので、「静的スキャンが見たファイル」と対象集合が一致する。
+pub fn collect_scannable_files(root: &Path) -> Vec<(PathBuf, String)> {
+    let mut out = Vec::new();
+    for entry in walkdir::WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|e| !e.file_type().is_dir() || !EXCLUDE_DIRS.contains(&e.file_name().to_string_lossy().as_ref()))
+    {
+        let Ok(entry) = entry else { continue };
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(ext) = path.extension().and_then(|e| e.to_str()) else { continue };
+        if !SCANNABLE_EXTS.contains(&ext) {
+            continue;
+        }
+        let Ok(meta) = std::fs::metadata(path) else { continue };
+        if meta.len() > MAX_SCAN_BYTES {
+            continue;
+        }
+        if let Ok(text) = std::fs::read_to_string(path) {
+            out.push((path.to_path_buf(), text));
+        }
+    }
+    out
+}
+
 /// 1プロジェクト(ディレクトリ)をスキャンする。`Cargo.toml`/`package.json`
 /// の依存名チェックと、拡張子でフィルタしたソース/スクリプトファイルの
 /// パターンチェックの両方を行う。
@@ -180,9 +225,8 @@ pub fn scan_project(root: &Path) -> Vec<Finding> {
     let npm_blocked = blocklist::npm_blocklist();
     let crates_blocked = blocklist::crates_io_blocklist();
 
-    let scannable_exts =
-        ["sh", "ps1", "bat", "cmd", "js", "ts", "mjs", "cjs", "py", "rb", "rs", "go", "php", "pl", "vbs", "psm1", "txt", "conf", "cfg", "yml", "yaml", "json"];
-    let exclude_dirs = ["node_modules", ".git", "target", "dist", "build"];
+    let scannable_exts = SCANNABLE_EXTS;
+    let exclude_dirs = EXCLUDE_DIRS;
 
     for entry in walkdir::WalkDir::new(root).into_iter().filter_entry(|e| {
         !e.file_type().is_dir() || !exclude_dirs.contains(&e.file_name().to_string_lossy().as_ref())
@@ -224,7 +268,6 @@ pub fn scan_project(root: &Path) -> Vec<Finding> {
 
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             if scannable_exts.contains(&ext) {
-                const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
                 if let Ok(meta) = std::fs::metadata(path) {
                     if meta.len() <= MAX_SCAN_BYTES {
                         if let Ok(text) = std::fs::read_to_string(path) {
