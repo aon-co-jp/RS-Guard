@@ -20,13 +20,39 @@
 > - 実ファイルスキャンは**ClamAVが別途インストールされている場合のみ**
 >   機能します(未導入なら正直にその旨を返し、黙って「クリーン」とは
 >   報告しません)。
+> - **破壊的操作・自動実行の検出はすべて実行前の静的検査**であり、
+>   USBメモリ挿入時やメール添付を開く際に**カーネルレベルでリアル
+>   タイムに阻止する常駐ガードではありません**。実際にフォーマットや
+>   全削除を実行時に強制阻止するには、Windowsのファイルシステム
+>   ミニフィルタドライバやLinuxのLSM/eBPFによる特権常駐サービスが
+>   必要で、これはEDR製品の領域です。RS-Guardが提供するのは
+>   「USBの中身を開く前」「メール添付を実行する前」に検査して警告する
+>   予防であり、OS標準の実行時防御(Windowsの「コントロールされた
+>   フォルダー アクセス」・AppLocker、LinuxのSELinux/AppArmor)と
+>   併用してください。
+> - **プロジェクト内のフォルダ削除は誤検知しません**——`rm -rf
+>   ./target`のような開発時の通常操作は許容し、ドライブ全体・
+>   システムルートを対象にした操作のみを危険と判定します。
 
 ## できること
 
 - **`rs-guard scan-repos <dir>`**: `Cargo.toml`/`package.json`の依存名を
   ブロックリストと照合し、ソース/スクリプト(`.sh`/`.ps1`/`.js`/`.py`等)に
   `curl | bash`パイプ・PowerShell `-EncodedCommand`・base64復号後の即時実行
-  などの疑わしいパターンが無いかを検査する。`--json`でCI連携用の出力も可能。
+  などの疑わしいパターンが無いかを検査する。加えて以下も検出する:
+  - **ウイルス検体シグネチャ**(EICARテストファイル・シェルコード
+    ローダー・ドロッパー・ランサムウェア型の一括暗号化)。
+  - **スパイウェア挙動**(無断の情報収集〈SSH鍵・ブラウザ保存認証情報・
+    環境変数・キーロガー〉・持ち出し〈Webhook・DNSトンネリング〉・
+    常駐/自動巡回〈cron・systemdタイマー・レジストリRun・
+    スケジュールタスク・定期ビーコン〉)。
+  - **破壊的操作**(USBメモリのautorun仕込み・Office文書マクロの自動
+    実行・ドライブ全体のフォーマット/全削除・バックアップ破壊)。
+    **プロジェクト内の通常のフォルダ削除(`rm -rf ./target`等)は誤検知
+    せず許容する**——検出対象はドライブ全体・システムルートを狙った
+    操作のみ(下記の正直な開示を参照)。
+  `--ai`でaruaru-llmへの二次判定(埋め込み類似度によるAI判定)も有効化
+  できる。`--json`でCI連携用の出力も可能。
 - **`rs-guard scan-file <path>`**: ClamAVへ委譲して実ファイル/ディレクトリを
   スキャンする。ClamAV未導入なら終了コード2でエラーを返す。
 - **`rs-guard doctor`**: ClamAVの実行可否を確認し、未導入ならOS別の
@@ -69,14 +95,35 @@ file/EXE scanning to `clamdscan`/`clamscan`.
 >   catch obfuscated or novel attacks.
 > - Real file scanning works **only if ClamAV is separately installed** (if
 >   not, it says so honestly rather than silently reporting "clean").
+> - **All destructive-operation and auto-execution detection is pre-execution
+>   static analysis, not a kernel-level realtime guard** that blocks a USB
+>   drive or email attachment the instant it runs. Actually forcing a format
+>   or mass-delete to fail at runtime needs a Windows filesystem minifilter
+>   driver or a Linux LSM/eBPF-based privileged service — that's EDR-product
+>   territory. RS-Guard's job is to inspect *before* you open what's on a USB
+>   drive or run an email attachment; pair it with your OS's own runtime
+>   defenses (Windows Controlled Folder Access / AppLocker, Linux
+>   SELinux/AppArmor).
+> - **Ordinary in-project folder deletions are never flagged** — everyday
+>   commands like `rm -rf ./target` are allowed; only operations targeting an
+>   entire drive or the filesystem root are treated as dangerous.
 
 ### What it does
 
 - **`rs-guard scan-repos <dir>`**: matches `Cargo.toml`/`package.json`
   dependency names against a blocklist, and scans source/scripts (`.sh`,
   `.ps1`, `.js`, `.py`, etc.) for suspicious patterns (`curl | bash` pipes,
-  PowerShell `-EncodedCommand`, base64-decode-then-eval, and so on). `--json`
-  for CI integration.
+  PowerShell `-EncodedCommand`, base64-decode-then-eval, and so on). Also
+  detects: **virus signatures** (EICAR test file, shellcode loaders,
+  droppers, ransomware-style mass encryption); **spyware behavior**
+  (unauthorized data collection — SSH keys, browser credential stores,
+  env vars, keyloggers — exfiltration via webhooks/DNS tunneling, and
+  persistence/auto-patrol via cron, systemd timers, Windows Run keys,
+  scheduled tasks, periodic beacons); and **destructive operations**
+  (USB autorun payloads, Office macro auto-execution, whole-drive
+  format/wipe, backup destruction) while deliberately NOT flagging
+  ordinary in-project folder deletions. `--ai` adds an aruaru-llm
+  embedding-similarity second opinion. `--json` for CI integration.
 - **`rs-guard scan-file <path>`**: delegates to ClamAV for a real scan;
   returns exit code 2 with an error if ClamAV is not installed.
 - **`rs-guard doctor`**: checks ClamAV availability and prints per-OS install

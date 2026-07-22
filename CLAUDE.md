@@ -53,6 +53,50 @@ DB非依存。`walkdir`+`regex`+`serde_json`で静的スキャン。
 
 ## HANDOFF
 
+- **2026-07-22(続き2) 破壊的操作・無断自動実行の検出を追加**: ユーザー
+  指示「USBスティックメモリーを差し込んだりe-mailをクリックしたりする
+  際に、HDDやSSDを無断でフォーマットしようとしたり、全フォルダ・全
+  ファイルを無断で削除しようとしたり、おかしなウイルスを無断で自動実行
+  しようとするのを防御して。ただしウイルスでなくドライブ全体の削除で
+  ないなら、フォルダ削除などは許容して」を受けて実装。
+  1. **`src/destructive.rs`新設**: ドライブ全体・システムルートを対象に
+     した操作だけを検出する設計(`rm -rf /`・`--no-preserve-root`・
+     `del /s /q C:\`・`Remove-Item C:\ -Recurse`・`format`/
+     `Format-Volume`/`mkfs`/`wipefs`・生ディスクへの`dd`/
+     `\\.\PhysicalDriveN`書き込み・`vssadmin delete shadows`等の
+     バックアップ破壊)。**`rm -rf ./target`のようなプロジェクト内の
+     通常のフォルダ削除は意図的に検出しない**(ユーザー指示通り、
+     対象がルート/ドライブ直下であることを要求する正規表現にすることで
+     区別)。加えて無断の自動実行(USBの`autorun.inf`・Office文書の
+     `AutoOpen`/`Document_Open`マクロ+シェル実行・ダウンロード直後の
+     実行ファイル起動)も検出。
+  2. **`repo_scan.rs`**: `FindingKind::DestructiveOperation`
+     (`Severity::Critical`)を追加、`scan_text`の最優先チェックとして
+     配線。スキャン対象拡張子に`.inf`(autorun)・`.bas`/`.vba`/`.cls`
+     (VBAマクロのエクスポート形式)を追加。
+  3. **正直な開示**(README両言語・モジュールdocに明記): これは
+     実行前の静的検査であり、USB挿入時やメール添付実行時に**カーネル
+     レベルでリアルタイムに阻止する常駐ガードではない**(それは
+     Windowsミニフィルタドライバ/Linux LSM・eBPFによるEDR製品の領域)。
+     OS標準の実行時防御(コントロールされたフォルダー アクセス・
+     AppLocker・SELinux/AppArmor)と併用すべき旨を明記。
+  4. **検証**: 実装中に`regex`クレートの罠を発見・修正——`(?is)`フラグの
+     `s`は`.`の挙動のみ変え、`[^\n]`のような手書きの否定文字クラスには
+     効かないため、複数行にまたがる`diskpart`+`clean`や`[autorun]`+
+     `open=`のパターンが実際には一致しないバグがあった(ユニットテストで
+     発見、`[^\n]`→`[\s\S]`に置換して解消)。`cargo test`
+     **37件全green**、`cargo clippy --all-targets`警告0件。実バイナリで
+     実ファイル3種(通常の`rm -rf ./target`等の掃除スクリプト・
+     diskpart+Format-Volume+vssadminを含む悪性PS1・`autorun.inf`)を
+     スキャンし、**掃除スクリプトは検出0件(誤検知なし)**・悪性PS1と
+     autorun.infは合計4件のCriticalとして正しく検出されることを実HTTP
+     ではなく実CLI実行で確認(古いビルドのバイナリで一度検証漏れが
+     あったことに気づき再ビルドして再確認、という教訓も記録)。
+  - 次にすべきこと: (1) VPS本番への再デプロイ(このパスの変更は
+    ローカル検証のみ)、(2) easy-web.tokyo/RS-Guardのログイン後実運用
+    画面(open-easy-web統合、引き続き未着手)、(3) 破壊的操作パターンの
+    プラットフォーム別拡充(macOS`diskutil eraseDisk`等は未カバー)。
+
 - **2026-07-22(続き) ウイルス/スパイウェア検出・AI二次判定・VPSデプロイ完了**:
   1. **ウイルス/スパイウェア静的検出**(`src/signatures.rs`/`src/spyware.rs`):
      マルウェアシグネチャ(EICAR・シェルコードローダー・ドロッパー・

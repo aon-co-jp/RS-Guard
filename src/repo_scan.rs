@@ -16,7 +16,7 @@
 //! 悪意あるコードや、パターンに現れない新種の攻撃は検出できない。
 //! 実行時の常駐監視でもない(それはOSのファイアウォール/EDR製品の領域)。
 
-use crate::{blocklist, signatures, spyware};
+use crate::{blocklist, destructive, signatures, spyware};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -45,6 +45,10 @@ pub enum FindingKind {
     MalwareSignature,
     /// スパイウェア挙動(無断の情報収集・持ち出し・常駐/自動巡回)。
     SpywareBehavior,
+    /// ドライブ全体・システムルートを対象にした破壊的操作(フォーマット・
+    /// 全削除・バックアップ破壊)、または無断の自動実行の仕込み
+    /// (USBのautorun・Office文書マクロ・ダウンロード即実行)。
+    DestructiveOperation,
     /// 静的ルールには一致しなかったが、AI二次判定
     /// ([`crate::ai_classify`]、aruaru-llmの埋め込み類似度)が疑わしいと
     /// 判定したもの。訓練済み分類器ではなくヒューリスティックなので、
@@ -122,6 +126,18 @@ fn suspicious_patterns() -> Vec<(&'static str, Regex)> {
 /// 静かにスキップ、バイナリファイルの誤検知を避けるため)。
 /// `text`を受け取る形にして、複数のパターン群でファイルを1回だけ読む。
 fn scan_text(path: &Path, text: &str, findings: &mut Vec<Finding>) {
+    // 破壊的操作(ドライブ全体フォーマット・全削除・無断の自動実行)。
+    // ウイルス検体と並ぶ最優先度——実害が最も直接的なため。
+    for (name, re) in destructive::destructive_patterns() {
+        if re.is_match(text) {
+            findings.push(Finding {
+                file: path.to_path_buf(),
+                kind: FindingKind::DestructiveOperation,
+                severity: Severity::Critical,
+                detail: name.to_string(),
+            });
+        }
+    }
     // ウイルス/マルウェア検体シグネチャ(最優先、Critical)。
     for (name, re) in signatures::malware_signatures() {
         if re.is_match(text) {
@@ -179,8 +195,11 @@ fn scan_text(path: &Path, text: &str, findings: &mut Vec<Finding>) {
 
 /// スキャン対象とする拡張子。`scan_project`と、AI二次判定用の
 /// [`collect_scannable_files`]で同じ集合を使う。
-const SCANNABLE_EXTS: [&str; 22] =
-    ["sh", "ps1", "bat", "cmd", "js", "ts", "mjs", "cjs", "py", "rb", "rs", "go", "php", "pl", "vbs", "psm1", "txt", "conf", "cfg", "yml", "yaml", "json"];
+const SCANNABLE_EXTS: [&str; 26] = [
+    "sh", "ps1", "bat", "cmd", "js", "ts", "mjs", "cjs", "py", "rb", "rs", "go", "php", "pl", "vbs", "psm1", "txt", "conf", "cfg", "yml", "yaml", "json",
+    // Office VBAマクロのエクスポート形式・autorun設定。
+    "bas", "vba", "cls", "inf",
+];
 
 /// 走査から除外するディレクトリ(依存物・ビルド成果物)。
 const EXCLUDE_DIRS: [&str; 5] = ["node_modules", ".git", "target", "dist", "build"];
