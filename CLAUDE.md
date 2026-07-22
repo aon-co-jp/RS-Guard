@@ -53,6 +53,46 @@ DB非依存。`walkdir`+`regex`+`serde_json`で静的スキャン。
 
 ## HANDOFF
 
+- **2026-07-22(続き) ウイルス/スパイウェア検出・AI二次判定・VPSデプロイ完了**:
+  1. **ウイルス/スパイウェア静的検出**(`src/signatures.rs`/`src/spyware.rs`):
+     マルウェアシグネチャ(EICAR・シェルコードローダー・ドロッパー・
+     ランサムウェア型・pastebin実行)と、スパイウェア挙動3分類——無断の
+     情報収集(SSH鍵/ブラウザ認証情報/環境変数/キーロガー/クリップボード/
+     スクリーンショット)、持ち出し(環境変数のPOST・Discord/Telegram
+     Webhook・DNSトンネリング)、**常駐・自動巡回**(cron・systemd・
+     WindowsレジストリRun・スケジュールタスク・launchd・定期ビーコン)。
+     `Severity`(Critical/High/Medium/Info)を追加し重大順にソート。
+     **EICARはラベル部分のみで検出**し完全な68バイト検体は埋め込まない
+     (自リポジトリがAVに検出される罠の回避)。`regex`クレートは先読み
+     非対応のため全パターンで不使用。
+  2. **AI二次判定**(`src/ai_classify.rs`、`--ai`/`--ai-url`): 静的ルールが
+     **何も検出しなかったファイルだけ**をaruaru-llmの
+     `/v1/classify-security`(open-cudaのopencuda-bert埋め込み)へ送り、
+     意味的類似度で再評価する。スニペットは2000文字上限・タイムアウト30秒。
+     AI検出は`FindingKind::AiSuspicion`/`Severity::Medium`(正規表現の
+     完全一致より確信度が低いヒューリスティックなので誇張せず中位)。
+     **実機E2E検証済み**: SSH鍵を読んでPOSTするJSを、パスとURLを文字列
+     分割して正規表現を回避する形にしたところ静的ルールは取り逃がし、
+     `--ai`が`persistence-beacon`(score 0.889)として正しく検出、通常の
+     コードは検出されないことを確認。**AI到達不能時は黙って「安全」と
+     言わず**`STATIC RULES ONLY`と警告することも確認。30テスト・
+     clippy警告0。
+  3. **VPSデプロイ**(`runo.tokyo/RS-Guard`、紹介・ダウンロードページ):
+     `/root/runo.tokyo/RS-Guard`で`cargo build --release`→systemd
+     `rs-guard.service`(`serve --port 8098`)→open-web-serverの
+     `domains.toml`に`path_prefix = "/RS-Guard"`追加→nginxに
+     `location /RS-Guard`追加(RS-Opsと同じ2層構成: nginx→8103→8098)。
+     **実HTTP検証**: `/RS-Guard/`(200・タイトル/見出し/開示文を確認)・
+     `/healthz`(200)・`install.sh`(200)・`install.ps1`(200)。既存の
+     `/`・`/blog`・`/ec`・`/RS-Ops`・`/rs-git/ui/`・`/rs-sync/`が
+     引き続き200であることも確認(リグレッション無し)。
+  - 次にすべきこと: (1) **easy-web.tokyo/RS-Guardのログイン後実運用画面**
+    (open-easy-web本体へ統合、ブラウザからスキャン実行)——未着手、
+    (2) VPSへのClamAV導入判断(現状`doctor`は未導入を正直に報告)、
+    (3) ブロックリスト/シグネチャの拡充(バックグラウンドエージェントに
+    委任したが変更は着地しなかったことを`git`で裏取り済み、要再着手)、
+    (4) Android版(Kotlin/Javaの別ツールチェーンが必要)。
+
 - **2026-07-22 初版作成**: ユーザー指示「関連リポジトリや関連プロジェクトの
   中にコンピューターウイルスが入って実行されたら怖いので、セキュリティ
   対策を立てて機能搭載してほしい。Windows版とLinux版と(Androidも)他の
