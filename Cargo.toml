@@ -22,6 +22,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 walkdir = "2"
 regex = "1"
+poem = "3.1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
 
 [dev-dependencies]
 tempfile = "3"

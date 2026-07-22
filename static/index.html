@@ -1,0 +1,68 @@
+<meta charset="utf-8">
+<title>RS-Guard</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  h1 { margin-bottom: 0.2rem; }
+  .subtitle { color: #666; margin-top: 0; }
+  section { margin: 2rem 0; }
+  .download-card { display: inline-block; border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.5rem; margin-right: 1rem; text-decoration: none; color: inherit; }
+  code, pre { background: #f0f0f0; padding: 0.15rem 0.4rem; border-radius: 3px; }
+  pre { padding: 0.8rem; overflow-x: auto; }
+  .note { border-left: 4px solid #a15c00; padding: 0.5rem 1rem; background: #fff8ec; font-size: 0.92rem; }
+  a.op-link { display: inline-block; margin-top: 0.5rem; }
+</style>
+
+<h1>RS-Guard</h1>
+<p class="subtitle">Supply-chain repo/dependency pattern scanner + optional ClamAV integration</p>
+
+<section>
+  <h2>What this is</h2>
+  <p>
+    <code>rs-guard</code> is a small CLI that (1) scans project directories for
+    dependency names matching a curated blocklist of known-malicious/typosquat
+    packages, plus regex checks for suspicious script patterns (curl|bash
+    pipelines, PowerShell <code>-EncodedCommand</code>, base64-decode-then-eval,
+    etc.), and (2) optionally delegates to ClamAV
+    (<code>clamdscan</code>/<code>clamscan</code>) if it's already installed on
+    your machine, for a real file/EXE scan.
+  </p>
+  <p class="note">
+    <strong>This does not replace your antivirus.</strong> It runs alongside
+    whatever you already use — the dependency/pattern blocklist here is a
+    static, manually curated snapshot (not a live-updated threat feed), and
+    the ClamAV integration is a thin wrapper, not a bundled engine.
+  </p>
+</section>
+
+<section>
+  <h2>Team / logged-in operation</h2>
+  <p>
+    This page is the public introduction and download point. Team members can
+    run scans through the browser (no local install needed) after logging in at
+    <a href="https://easy-web.tokyo/">easy-web.tokyo</a>:
+  </p>
+  <a class="op-link" href="https://easy-web.tokyo/RS-Guard">https://easy-web.tokyo/RS-Guard →</a>
+</section>
+
+<section>
+  <h2>Install locally</h2>
+  <a class="download-card" href="install.sh" download>
+    <strong>Linux</strong><br><code>install.sh</code>
+  </a>
+  <a class="download-card" href="install.ps1" download>
+    <strong>Windows</strong><br><code>install.ps1</code>
+  </a>
+  <p>Android is not supported yet (requires a separate Kotlin/Java toolchain, planned for a future iteration).</p>
+</section>
+
+<section>
+  <h2>Usage</h2>
+  <pre>rs-guard scan-repos /path/to/your/repos   # dependency-name + suspicious-script scan
+rs-guard scan-file /path/to/file-or-dir   # delegates to ClamAV if installed
+rs-guard doctor                           # check ClamAV availability</pre>
+</section>
+
+<section>
+  <h2>Source</h2>
+  <p><a href="https://github.com/aon-co-jp/RS-Guard">github.com/aon-co-jp/RS-Guard</a></p>
+</section>

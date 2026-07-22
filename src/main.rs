@@ -32,15 +32,68 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// 紹介・ダウンロード用の最小限のHTTPサーバー(`runo.tokyo/RS-Guard`
+    /// での公開紹介ページ用)。ログイン制の実運用画面はこのプロセスでは
+    /// なく`easy-web.tokyo`(open-easy-web)側に統合する(別リポジトリ)。
+    Serve {
+        #[arg(long, default_value_t = 8098)]
+        port: u16,
+    },
 }
 
-fn main() -> ExitCode {
+#[tokio::main]
+async fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         Command::ScanRepos { path, json } => run_scan_repos(&path, json),
         Command::Doctor => run_doctor(),
         Command::ScanFile { path, json } => run_scan_file(&path, json),
+        Command::Serve { port } => {
+            if let Err(e) = run_serve(port).await {
+                eprintln!("server error: {e}");
+                return ExitCode::FAILURE;
+            }
+            ExitCode::SUCCESS
+        }
     }
+}
+
+async fn run_serve(port: u16) -> Result<(), std::io::Error> {
+    use poem::{get, handler, listener::TcpListener, EndpointExt, Route, Server};
+
+    #[handler]
+    fn index() -> poem::web::Html<&'static str> {
+        poem::web::Html(include_str!("../static/index.html"))
+    }
+    #[handler]
+    fn healthz() -> &'static str {
+        "ok"
+    }
+    #[handler]
+    fn install_sh() -> poem::Response {
+        poem::Response::builder()
+            .header("content-type", "text/x-shellscript; charset=utf-8")
+            .header("content-disposition", "attachment; filename=\"install.sh\"")
+            .body(include_str!("../install.sh"))
+    }
+    #[handler]
+    fn install_ps1() -> poem::Response {
+        poem::Response::builder()
+            .header("content-type", "text/plain; charset=utf-8")
+            .header("content-disposition", "attachment; filename=\"install.ps1\"")
+            .body(include_str!("../install.ps1"))
+    }
+
+    let app = Route::new()
+        .at("/", get(index))
+        .at("/healthz", get(healthz))
+        .at("/install.sh", get(install_sh))
+        .at("/install.ps1", get(install_ps1))
+        .with(poem::middleware::Tracing);
+
+    tracing_subscriber::fmt::try_init().ok();
+    tracing::info!("rs-guard intro/download server listening on 0.0.0.0:{port}");
+    Server::new(TcpListener::bind(("0.0.0.0", port))).run(app).await
 }
 
 fn run_scan_repos(path: &Path, json: bool) -> ExitCode {
