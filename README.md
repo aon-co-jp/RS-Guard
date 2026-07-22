@@ -34,6 +34,17 @@
 >   ./target`のような開発時の通常操作は許容し、ドライブ全体・
 >   システムルートを対象にした操作のみを危険と判定します。
 
+## 位置づけ: 「ClamAV＋α」
+
+RS-Guardは**ClamAVを置き換えるものではなく、ClamAVを土台にした「＋α」**
+です。ClamAVが実ファイル/EXEの本格スキャン(数十万件超のシグネチャDB)を
+担う一方、RS-Guardは①依存パッケージ名のサプライチェーン検査、②ソース
+コード中のスパイウェア的挙動パターン検査、③破壊的操作/自動実行の検出、
+④正規表現をすり抜けた言い換えコードのAI二次判定——という、ClamAVが
+カバーしない領域を補います。**「ClamAV = 実ファイルの最終防衛線」
+「RS-Guard = 開発中のコード・依存関係・スクリプトに対する早期警戒網」**
+という補完関係です。
+
 ## できること
 
 - **`rs-guard scan-repos <dir>`**: `Cargo.toml`/`package.json`の依存名を
@@ -107,6 +118,17 @@ file/EXE scanning to `clamdscan`/`clamscan`.
 > - **Ordinary in-project folder deletions are never flagged** — everyday
 >   commands like `rm -rf ./target` are allowed; only operations targeting an
 >   entire drive or the filesystem root are treated as dangerous.
+
+### Positioning: "ClamAV + alpha"
+
+RS-Guard **does not replace ClamAV — it builds on top of it.** ClamAV covers
+real file/EXE scanning (a signature database of hundreds of thousands of
+entries). RS-Guard adds what ClamAV doesn't cover: ① supply-chain checks on
+dependency package names, ② source-code-level spyware behavior patterns,
+③ destructive-operation / unauthorized-auto-exec detection, and ④ an AI
+second opinion for reworded code that slips past the regexes. In short:
+**"ClamAV = the last line of defense for real files" / "RS-Guard = an early
+warning net for code, dependencies, and scripts still being developed."**
 
 ### What it does
 

@@ -34,7 +34,14 @@ enum Command {
     },
     /// ClamAVが実際にインストールされているかを確認する(定義DBの
     /// 有無やバージョンまでは検証しない、実行可否のみ)。
-    Doctor,
+    Doctor {
+        /// 未導入だった場合、このOSのパッケージマネージャで実際に
+        /// インストールを試みる(apt/dnf/pacman/brew/winget、検出できた
+        /// もの1つだけを使う)。インストール後は`freshclam`で定義DBの
+        /// 初回取得も試みる。
+        #[arg(long)]
+        install: bool,
+    },
     /// ClamAV(`clamdscan`/`clamscan`)へ処理を委譲してファイル/ディレクトリを
     /// スキャンする。ClamAV未導入の場合は正直にエラーを返す。
     ScanFile {
@@ -56,7 +63,7 @@ async fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         Command::ScanRepos { path, json, ai, ai_url } => run_scan_repos(&path, json, ai, &ai_url).await,
-        Command::Doctor => run_doctor(),
+        Command::Doctor { install } => run_doctor(install),
         Command::ScanFile { path, json } => run_scan_file(&path, json),
         Command::Serve { port } => {
             if let Err(e) = run_serve(port).await {
@@ -183,15 +190,57 @@ async fn run_ai_pass(root: &Path, ai_url: &str, static_findings: &[repo_scan::Fi
     Ok(out)
 }
 
-fn run_doctor() -> ExitCode {
+fn run_doctor(install: bool) -> ExitCode {
     if clamav::is_available() {
         println!("ClamAV: available (clamdscan or clamscan found on PATH).");
-        ExitCode::SUCCESS
-    } else {
-        println!("ClamAV: NOT found on PATH. Install it to enable `rs-guard scan-file`:");
+        return ExitCode::SUCCESS;
+    }
+
+    println!("ClamAV: NOT found on PATH.");
+
+    if !install {
+        println!("Run `rs-guard doctor --install` to try installing it automatically, or install manually:");
         println!("  Windows: choco install clamav  (or download from https://www.clamav.net/downloads)");
         println!("  Debian/Ubuntu: sudo apt install clamav clamav-daemon && sudo freshclam");
         println!("  RHEL/AlmaLinux: sudo dnf install epel-release && sudo dnf install clamav clamav-update && sudo freshclam");
+        return ExitCode::from(1);
+    }
+
+    let Some(plan) = clamav::detect_install_plan() else {
+        println!("Could not detect a package manager (apt/dnf/pacman/brew/choco/winget) on this machine.");
+        println!("Install ClamAV manually:");
+        println!("  Windows: https://www.clamav.net/downloads");
+        println!("  Debian/Ubuntu: sudo apt install clamav clamav-daemon && sudo freshclam");
+        println!("  RHEL/AlmaLinux: sudo dnf install epel-release && sudo dnf install clamav clamav-update && sudo freshclam");
+        return ExitCode::from(1);
+    };
+
+    println!("Installing ClamAV via {}...", plan.description);
+    println!("(If a package-manager step fails with a permission error, re-run this whole command as root/admin — RS-Guard does not escalate privileges itself.)");
+    let results = clamav::install_with(&plan);
+    let mut all_ok = true;
+    for step in &results {
+        if step.success {
+            println!("  ok:   {}", step.command);
+        } else {
+            all_ok = false;
+            println!("  FAIL: {}", step.command);
+            if !step.output_tail.is_empty() {
+                for line in step.output_tail.lines() {
+                    println!("        {line}");
+                }
+            }
+        }
+    }
+
+    if clamav::is_available() {
+        println!("\nClamAV is now available.");
+        ExitCode::SUCCESS
+    } else {
+        println!("\nClamAV still not found on PATH after the install attempt.");
+        if !all_ok {
+            println!("(At least one install step failed — see FAIL lines above. This is likely a permissions issue; try running as root/admin.)");
+        }
         ExitCode::from(1)
     }
 }

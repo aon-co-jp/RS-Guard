@@ -47,6 +47,112 @@ fn find_binary() -> Option<&'static str> {
     ["clamdscan", "clamscan"].into_iter().find(|candidate| Command::new(candidate).arg("--version").output().is_ok())
 }
 
+/// **権限についての正直な注記**: Linux/macOSでパッケージをインストール
+/// するコマンドは通常root権限が要る。RS-Guardは自分で`sudo`を付けたり
+/// 権限昇格したりしない(黙って昇格すると何が起きているか分からなく
+/// なるため)——rootで動いていなければコマンドは失敗し、その旨が
+/// `InstallStepResult`に正直に出る。一般ユーザーが使う場合は
+/// `sudo rs-guard doctor --install`のようにユーザー自身が明示的に
+/// 昇格すること。
+///
+/// このOSで実行できそうなClamAV導入コマンド。**ユーザー環境を推測して
+/// 提示するだけ**——`install_with`が実際に呼ぶまでは何も実行しない。
+/// 検出できたパッケージマネージャ1つだけを返す(複数候補があっても
+/// 最初に見つかったものを使う、`find_binary`と同じ「最初の1つ」方針)。
+pub struct InstallPlan {
+    /// 人間向けの説明(どのパッケージマネージャを使うか)。
+    pub description: &'static str,
+    /// 実行するコマンド列(複数行に分かれる場合がある、例:
+    /// パッケージインストール→`freshclam`)。
+    pub commands: Vec<Vec<&'static str>>,
+}
+
+/// このマシンで使えそうなパッケージマネージャを検出し、導入手順を返す。
+/// 検出できなければ`None`(手動インストールの案内は呼び出し側`doctor`が
+/// 表示する)。
+pub fn detect_install_plan() -> Option<InstallPlan> {
+    if cfg!(target_os = "windows") {
+        if command_exists("choco") {
+            return Some(InstallPlan { description: "winget/chocolatey (choco)", commands: vec![vec!["choco", "install", "clamav", "-y"]] });
+        }
+        if command_exists("winget") {
+            return Some(InstallPlan {
+                description: "winget",
+                commands: vec![vec!["winget", "install", "--id", "ClamAV.ClamAV", "-e", "--source", "winget"]],
+            });
+        }
+        return None;
+    }
+    if cfg!(target_os = "macos") {
+        if command_exists("brew") {
+            return Some(InstallPlan { description: "Homebrew", commands: vec![vec!["brew", "install", "clamav"]] });
+        }
+        return None;
+    }
+    // Linux系。
+    if command_exists("apt-get") {
+        return Some(InstallPlan {
+            description: "APT (Debian/Ubuntu)",
+            commands: vec![
+                vec!["apt-get", "update"],
+                vec!["apt-get", "install", "-y", "clamav", "clamav-daemon"],
+                vec!["freshclam"],
+            ],
+        });
+    }
+    if command_exists("dnf") {
+        return Some(InstallPlan {
+            description: "DNF (RHEL/AlmaLinux/Fedora)",
+            commands: vec![
+                vec!["dnf", "install", "-y", "epel-release"],
+                vec!["dnf", "install", "-y", "clamav", "clamav-update"],
+                vec!["freshclam"],
+            ],
+        });
+    }
+    if command_exists("pacman") {
+        return Some(InstallPlan {
+            description: "pacman (Arch)",
+            commands: vec![vec!["pacman", "-Sy", "--noconfirm", "clamav"], vec!["freshclam"]],
+        });
+    }
+    None
+}
+
+fn command_exists(cmd: &str) -> bool {
+    Command::new(cmd).arg("--version").output().is_ok()
+}
+
+#[derive(Debug)]
+pub struct InstallStepResult {
+    pub command: String,
+    pub success: bool,
+    pub output_tail: String,
+}
+
+/// `plan`の各コマンドを**実際に**順に実行する。呼び出し元
+/// (`rs-guard doctor --install`)が明示的に`--install`を付けたときだけ
+/// 呼ばれる——検出しただけで黙って実行はしない。途中のコマンドが
+/// 失敗しても後続は試す(例えば`freshclam`が失敗してもパッケージ自体は
+/// 入っている場合があるため)。
+pub fn install_with(plan: &InstallPlan) -> Vec<InstallStepResult> {
+    plan.commands
+        .iter()
+        .map(|argv| {
+            let command_str = argv.join(" ");
+            match Command::new(argv[0]).args(&argv[1..]).output() {
+                Ok(out) => {
+                    let mut tail = String::from_utf8_lossy(&out.stdout).to_string();
+                    tail.push_str(&String::from_utf8_lossy(&out.stderr));
+                    let tail: String = tail.lines().rev().take(5).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+                    InstallStepResult { command: command_str, success: out.status.success(), output_tail: tail }
+                }
+                Err(e) => InstallStepResult { command: command_str, success: false, output_tail: e.to_string() },
+            }
+        })
+        .collect()
+}
+
 pub fn scan_path(path: &Path) -> Result<ClamAvResult, ClamAvError> {
     let binary = find_binary().ok_or(ClamAvError::NotInstalled)?;
     let output = Command::new(binary)
@@ -72,6 +178,25 @@ pub fn scan_path(path: &Path) -> Result<ClamAvResult, ClamAvError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detect_install_plan_finds_something_or_honestly_returns_none() {
+        // このマシンに何らかのパッケージマネージャがあれば具体的な
+        // コマンド列を返すこと、無ければNoneであることのどちらかを
+        // 確認する(環境依存なので固定の期待値は置けない)。
+        match detect_install_plan() {
+            Some(plan) => assert!(!plan.commands.is_empty(), "a detected plan must contain at least one command"),
+            None => eprintln!("no known package manager detected on this machine (honest None, not a failure)"),
+        }
+    }
+
+    #[test]
+    fn install_with_reports_failure_for_a_nonexistent_command() {
+        let plan = InstallPlan { description: "test", commands: vec![vec!["this-binary-does-not-exist-anywhere"]] };
+        let results = install_with(&plan);
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].success, "a nonexistent command must be reported as failed, not silently skipped");
+    }
 
     #[test]
     fn scan_path_without_clamav_installed_returns_not_installed() {
