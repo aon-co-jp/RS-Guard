@@ -85,6 +85,13 @@ Web UI(`runo.tokyo/RS-Guard`)の「Install locally」から、Linux向け
 未実装、正直に開示)。**Androidは未対応**(Kotlin/Javaの別ツールチェーンが
 必要なため、将来のイテレーションで検討)。
 
+2026-07-23、`.github/workflows/release.yml`を追加し、タグ(`v0.1.0`〜)
+push時にLinux x86_64・Windows x86_64向けのプリビルド済みバイナリを
+[GitHub Releases](https://github.com/aon-co-jp/RS-Guard/releases)へ
+自動添付するようにした(`install.sh`/`install.ps1`のソースビルド方式は
+そのまま維持、プリビルド済みバイナリを直接使いたい場合の代替手段として
+提供)。
+
 ---
 
 ## English
@@ -167,3 +174,9 @@ From the "Install locally" section of the web UI, download `install.sh`
 signed binaries or deb/msi packaging yet — disclosed honestly). **Android is
 not supported** (it needs a separate Kotlin/Java toolchain; planned for a
 future iteration).
+
+As of 2026-07-23, `.github/workflows/release.yml` builds and attaches
+prebuilt Linux x86_64 / Windows x86_64 binaries to
+[GitHub Releases](https://github.com/aon-co-jp/RS-Guard/releases) on every
+`v*` tag push, as an alternative to the source-build `install.sh`/`install.ps1`
+flow above (which remains unchanged).
