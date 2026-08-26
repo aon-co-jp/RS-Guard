@@ -1,1 +1,4 @@
 /target
+
+# Windowsインストーラー(Inno Setup)のビルド成果物。
+installer/windows/dist/
