@@ -266,5 +266,5 @@ DB非依存。`walkdir`+`regex`+`serde_json`で静的スキャン。
 - 次にすべきこと: このリポジトリの`install.sh`/`install.ps1`に上記3
   プロファイルの選択機能を追加する。
 
-- **2026-10-18 ���J**: LICENSE(Apache-2.0�ACargo.toml�錾�ǂ���)�ǉ��E�S�����̋@�������ς݂Ń��|�W�g�������J�B������v0.1.0 Release�����J��ԂɁBAndroid�ŁEeasy-web������ʂ͖�����̂܂܁B
+- **2026-10-18 公開**: LICENSE(Apache-2.0、Cargo.toml宣言どおり)追加・全履歴の機密検査済みでリポジトリを公開。既存のv0.1.0 Releaseを公開状態に。Android版・easy-web統合画面は未着手のまま。
 

@@ -181,11 +181,11 @@ prebuilt Linux x86_64 / Windows x86_64 binaries to
 `v*` tag push, as an alternative to the source-build `install.sh`/`install.ps1`
 flow above (which remains unchanged).
 
-## ƒ‰ƒCƒZƒ“ƒX / License
+## ãƒ©ã‚¤ã‚»ãƒ³ã‚¹ / License
 
-Apache-2.0(`LICENSE`QÆ)B / Apache-2.0 (see `LICENSE`).
+Apache-2.0(`LICENSE`å‚ç…§)ã€‚ / Apache-2.0 (see `LICENSE`).
 
-## –¢À‘•E¡Œã / Not yet done
+## æœªå®Ÿè£…ãƒ»ä»Šå¾Œ / Not yet done
 
-Android”ÅƒCƒ“ƒXƒg[ƒ‰[Aƒuƒ‰ƒEƒU‚©‚çƒXƒLƒƒƒ“‚ğÀs‚·‚éƒƒOƒCƒ“§‰æ–Ê(easy-web.tokyo“‡)‚Í–¢’…è‚Å‚·B / The Android installer and the login-protected web UI (easy-web.tokyo integration) are not implemented yet.
+Androidç‰ˆã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ©ãƒ¼ã€ãƒ–ãƒ©ã‚¦ã‚¶ã‹ã‚‰ã‚¹ã‚­ãƒ£ãƒ³ã‚’å®Ÿè¡Œã™ã‚‹ãƒ­ã‚°ã‚¤ãƒ³åˆ¶ç”»é¢(easy-web.tokyoçµ±åˆ)ã¯æœªç€æ‰‹ã§ã™ã€‚ / The Android installer and the login-protected web UI (easy-web.tokyo integration) are not implemented yet.
 
