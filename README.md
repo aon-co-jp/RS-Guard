@@ -180,3 +180,12 @@ prebuilt Linux x86_64 / Windows x86_64 binaries to
 [GitHub Releases](https://github.com/aon-co-jp/RS-Guard/releases) on every
 `v*` tag push, as an alternative to the source-build `install.sh`/`install.ps1`
 flow above (which remains unchanged).
+
+## ライセンス / License
+
+Apache-2.0(`LICENSE`参照)。 / Apache-2.0 (see `LICENSE`).
+
+## 未実装・今後 / Not yet done
+
+Android版インストーラー、ブラウザからスキャンを実行するログイン制画面(easy-web.tokyo統合)は未着手です。 / The Android installer and the login-protected web UI (easy-web.tokyo integration) are not implemented yet.
+

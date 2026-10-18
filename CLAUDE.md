@@ -265,3 +265,6 @@ DB非依存。`walkdir`+`regex`+`serde_json`で静的スキャン。
 ロジックを再利用すること(車輪の再発明を避ける)。
 - 次にすべきこと: このリポジトリの`install.sh`/`install.ps1`に上記3
   プロファイルの選択機能を追加する。
+
+- **2026-10-18 ���J**: LICENSE(Apache-2.0�ACargo.toml�錾�ǂ���)�ǉ��E�S�����̋@�������ς݂Ń��|�W�g�������J�B������v0.1.0 Release�����J��ԂɁBAndroid�ŁEeasy-web������ʂ͖�����̂܂܁B
+
