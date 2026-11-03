@@ -268,3 +268,6 @@ DB非依存。`walkdir`+`regex`+`serde_json`で静的スキャン。
 
 - **2026-10-18 公開**: LICENSE(Apache-2.0、Cargo.toml宣言どおり)追加・全履歴の機密検査済みでリポジトリを公開。既存のv0.1.0 Releaseを公開状態に。Android版・easy-web統合画面は未着手のまま。
 
+
+## 依存の更新(2026-11-03)
+reqwest 0.12→0.13(機能名`rustls-tls`→`rustls`)。ビルド・テスト通過。
