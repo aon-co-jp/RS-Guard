@@ -1,3 +1,3 @@
 source: aon-co-jp/RS-Guard
-commit: 21932c81ae7a38204c8e0ebefe3e2f84eaae9817
-updated: 2026-11-24T10:36:46Z
+commit: e77f32c73dad171242ee8602da0838a4d973b6a6
+updated: 2026-11-25T04:45:28Z
